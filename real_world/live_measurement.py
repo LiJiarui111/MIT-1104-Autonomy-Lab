@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import math
-import socket
 import time
 
 import matplotlib.pyplot as plt
@@ -9,8 +8,6 @@ from pyzbar.pyzbar import decode as pyzbar_decode
 
 # ==========================================
 # CONFIGURATION (Fill these in before running)
-ROBOT_IP     = "192.168.4.1"       # IP address of the robot car
-ROBOT_PORT   = 4210                # UDP port the robot listens on
 CAMERA_INDEX = 0                   # Webcam index (0 = built-in, 1+ = USB)
 QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
 SETPOINT_MM  = 300.0               # Target distance from wall (mm)
@@ -233,7 +230,7 @@ def show_post_run_plot(timestamps, distances, setpoint):
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Main  (standalone webcam debug tool -- no robot communication)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
 
@@ -255,10 +252,8 @@ if __name__ == "__main__":
         print(f"Error: Could not open camera index {CAMERA_INDEX}.")
         exit()
 
-    # --- Create UDP socket ---
-    udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    print(f"UDP socket ready. Sending to {ROBOT_IP}:{ROBOT_PORT}")
     print(f"Setpoint distance: {SETPOINT_MM:.0f} mm")
+    print("Webcam debug mode (no robot communication).")
     print("Starting video stream. Press 'q' to quit.\n")
 
     # --- Data log ---
@@ -279,18 +274,10 @@ if __name__ == "__main__":
             frame, mtx, dist_coeffs, QR_SIZE_MM
         )
 
-        # --- Send distance over UDP ---
         if distance is not None:
             elapsed = time.time() - t_start
             log_times.append(elapsed)
             log_distances.append(distance)
-
-            message = f"DIST:{distance:.1f}"
-            try:
-                udp_sock.sendto(message.encode("utf-8"),
-                                (ROBOT_IP, ROBOT_PORT))
-            except OSError:
-                pass  # network error -- don't crash the video loop
 
         # --- FPS counter ---
         frame_count += 1
@@ -312,7 +299,7 @@ if __name__ == "__main__":
                      (255, 255, 255), 2)
         hud_y += 25
         cv2.putText(processed_frame,
-                     f"Sending to {ROBOT_IP}:{ROBOT_PORT}",
+                     "Debug mode (no robot)",
                      (10, hud_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                      (200, 200, 200), 1)
 
@@ -329,7 +316,8 @@ if __name__ == "__main__":
                          (10, hud_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                          (0, 0, 255), 2)
 
-        cv2.imshow("Live Measurement  |  Press 'q' to stop", processed_frame)
+        cv2.imshow("Live Measurement (debug)  |  Press 'q' to stop",
+                   processed_frame)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
@@ -337,7 +325,6 @@ if __name__ == "__main__":
     # --- Cleanup ---
     cap.release()
     cv2.destroyAllWindows()
-    udp_sock.close()
 
     print(f"\nRecorded {len(log_distances)} distance samples "
           f"over {log_times[-1]:.1f} s." if log_times else

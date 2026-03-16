@@ -2,20 +2,19 @@
  * MIT 1.104 Lab 7 – Robot Car PID Controller (ESP32)
  *
  * Firmware uploaded ONCE by the TA.  The car boots into IDLE mode
- * (motors off, WiFi SoftAP active).  A laptop Python script sends
- * PID gains, a START command, and a continuous distance stream.
- * The car runs the PID loop until it receives STOP (or the stream
- * times out).
+ * (motors off, Bluetooth active).  A laptop Python script connects
+ * via Bluetooth SPP, sends PID gains, a START command, and a
+ * continuous distance stream.  The car runs the PID loop until it
+ * receives STOP (or the stream times out).
  *
- * UDP message protocol  (laptop → car):
+ * Message protocol  (laptop → car, newline-terminated):
  *   PID:Kp,Ki,Kd,setpoint   – configure gains  (e.g. PID:5.0,0.0,2.0,300.0)
  *   START                    – begin PID control
  *   DIST:xxx.x               – webcam distance in mm
  *   STOP                     – stop motors, return to IDLE
  */
 
-#include <WiFi.h>
-#include <WiFiUdp.h>
+#include "BluetoothSerial.h"
 
 // ==========================================
 // HARDWARE PIN CONFIGURATION  (TA sets once)
@@ -33,11 +32,9 @@
 #define ECHO 18
 
 // ==========================================
-// WIFI CONFIGURATION  (TA sets once per car)
+// BLUETOOTH CONFIGURATION  (TA sets once per car)
 // ==========================================
-const char* WIFI_SSID = "RobotCar_XX";  // Change XX to car number
-const char* WIFI_PASS = "1104lab7";
-const int   UDP_PORT  = 4210;
+const char* BT_NAME = "RobotCar_XX";  // Change XX to car number
 
 // ==========================================
 // MOTOR / CONTROL LIMITS  (TA-tunable)
@@ -55,7 +52,7 @@ float DIST_MAX_MM         = 2000.0;
 float OUTLIER_THRESHOLD   = 100.0;
 unsigned long WEBCAM_TIMEOUT_MS = 500;
 
-// Timeout: if no UDP packet for this long while RUNNING, auto-stop
+// Timeout: if no message for this long while RUNNING, auto-stop
 unsigned long STREAM_TIMEOUT_MS = 3000;
 
 // ---------------------------------------------------------------------------
@@ -76,7 +73,7 @@ bool  pid_configured = false;
 // ---------------------------------------------------------------------------
 // Runtime state
 // ---------------------------------------------------------------------------
-WiFiUDP udp;
+BluetoothSerial SerialBT;
 
 volatile float  webcam_dist_mm = -1.0;
 unsigned long   last_webcam_ms = 0;
@@ -115,17 +112,9 @@ float readUltrasonic() {
 }
 
 // =====================================================================
-// UDP message handler
+// Message parser (shared by receiveBT)
 // =====================================================================
-void receiveUDP() {
-    int packetSize = udp.parsePacket();
-    if (packetSize == 0) return;
-
-    char buf[128];
-    int len = udp.read(buf, sizeof(buf) - 1);
-    if (len <= 0) return;
-    buf[len] = '\0';
-
+void processMessage(const char* buf) {
     last_any_packet_ms = millis();
 
     // --- PID:Kp,Ki,Kd,setpoint ---
@@ -135,7 +124,6 @@ void receiveUDP() {
             Kp = p;  Ki = i;  Kd = d;  SETPOINT_MM = sp;
             pid_configured = true;
 
-            // Reset PID state for a fresh run
             e_prev     = 0.0;
             e_integral = 0.0;
             last_fused_mm = -1.0;
@@ -182,6 +170,27 @@ void receiveUDP() {
             last_webcam_ms = millis();
         }
         return;
+    }
+}
+
+// =====================================================================
+// Bluetooth serial receiver (line-buffered)
+// =====================================================================
+static char btBuf[128];
+static int  btBufIdx = 0;
+
+void receiveBT() {
+    while (SerialBT.available()) {
+        char c = SerialBT.read();
+        if (c == '\n' || c == '\r') {
+            if (btBufIdx > 0) {
+                btBuf[btBufIdx] = '\0';
+                processMessage(btBuf);
+                btBufIdx = 0;
+            }
+        } else if (btBufIdx < (int)sizeof(btBuf) - 1) {
+            btBuf[btBufIdx++] = c;
+        }
     }
 }
 
@@ -258,7 +267,7 @@ void stopMotors() {
 // =====================================================================
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n=== MIT 1.104 Robot Car (laptop-driven) ===");
+    Serial.println("\n=== MIT 1.104 Robot Car (Bluetooth) ===");
 
     pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
     pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
@@ -270,28 +279,24 @@ void setup() {
     ledcAttachPin(ENB, PWM_CHAN_B);
     stopMotors();
 
-    WiFi.softAP(WIFI_SSID, WIFI_PASS);
-    Serial.print("SoftAP: "); Serial.println(WIFI_SSID);
-    Serial.print("IP:     "); Serial.println(WiFi.softAPIP());
-
-    udp.begin(UDP_PORT);
-    Serial.print("UDP port "); Serial.println(UDP_PORT);
+    SerialBT.begin(BT_NAME);
+    Serial.print("Bluetooth: "); Serial.println(BT_NAME);
 
     loop_interval_ms = 1000 / CONTROL_HZ;
 
-    Serial.println("STATE   IDLE  (waiting for PID config + START)\n");
+    Serial.println("STATE   IDLE  (waiting for BT connection + PID config + START)\n");
 }
 
 // =====================================================================
 // Main loop
 // =====================================================================
 void loop() {
-    receiveUDP();
+    receiveBT();
 
     // ---- IDLE: just keep listening, motors stay off ----
     if (state == IDLE) return;
 
-    // ---- RUNNING: auto-stop if no packets for STREAM_TIMEOUT_MS ----
+    // ---- RUNNING: auto-stop if no messages for STREAM_TIMEOUT_MS ----
     if (millis() - last_any_packet_ms > STREAM_TIMEOUT_MS) {
         state = IDLE;
         stopMotors();

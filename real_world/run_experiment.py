@@ -8,7 +8,7 @@ Edit the PID parameters below, then run:
     python real_world/run_experiment.py
 
 The script will:
-  1. Connect to the robot car's WiFi (you must join it manually first).
+  1. Connect to the robot car via Bluetooth serial.
   2. Send the PID parameters and a START command to the car.
   3. Stream webcam distance measurements to the car in real time.
   4. When you press 'q', send STOP and display a performance plot.
@@ -16,8 +16,9 @@ The script will:
 
 import cv2
 import numpy as np
-import socket
+import serial
 import time
+import sys
 
 from live_measurement import (
     process_frame_for_distance,
@@ -36,8 +37,10 @@ Kd = 2.0
 # EXPERIMENT CONFIGURATION
 # ==========================================
 SETPOINT_MM  = 300.0               # Target distance from wall (mm)
-ROBOT_IP     = "192.168.4.1"       # Robot car IP (do not change)
-ROBOT_PORT   = 4210                # Robot car UDP port (do not change)
+SERIAL_PORT  = "/dev/tty.RobotCar_XX"  # Bluetooth serial port
+                                       # macOS:   /dev/tty.RobotCar_XX
+                                       # Windows: COM5  (check Device Manager)
+SERIAL_BAUD  = 115200              # Baud rate (must match ESP32)
 CAMERA_INDEX = 0                   # Webcam index (0 = built-in, 1+ = USB)
 QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
 CALIB_FILE   = "camera_calib.npz"  # Camera calibration file (optional)
@@ -62,19 +65,27 @@ def main():
         print(f"Error: Could not open camera index {CAMERA_INDEX}.")
         return
 
-    # --- Create UDP socket ---
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    addr = (ROBOT_IP, ROBOT_PORT)
+    # --- Open Bluetooth serial connection ---
+    print(f"\nConnecting to robot car on {SERIAL_PORT} ...")
+    try:
+        bt_serial = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+    except serial.SerialException as e:
+        print(f"Error: Could not open serial port {SERIAL_PORT}: {e}")
+        print("Make sure the robot car is powered on and paired via Bluetooth.")
+        cap.release()
+        return
+    time.sleep(0.5)
+    print("Connected.")
 
     def send(msg: str):
         try:
-            sock.sendto(msg.encode("utf-8"), addr)
-        except OSError as e:
-            print(f"  [UDP send error: {e}]")
+            bt_serial.write((msg + "\n").encode("utf-8"))
+        except serial.SerialException as e:
+            print(f"  [BT send error: {e}]")
 
     # --- Send PID configuration ---
     pid_msg = f"PID:{Kp},{Ki},{Kd},{SETPOINT_MM}"
-    print(f"\nSending PID config:  {pid_msg}")
+    print(f"Sending PID config:  {pid_msg}")
     send(pid_msg)
     time.sleep(0.1)
 
@@ -83,7 +94,7 @@ def main():
     send("START")
     time.sleep(0.05)
 
-    print(f"Streaming webcam distance to {ROBOT_IP}:{ROBOT_PORT}")
+    print(f"Streaming webcam distance via {SERIAL_PORT}")
     print(f"Setpoint: {SETPOINT_MM:.0f} mm  |  Kp={Kp}  Ki={Ki}  Kd={Kd}")
     print("Press 'q' in the video window to stop.\n")
 
@@ -165,7 +176,7 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
-    sock.close()
+    bt_serial.close()
 
     if log_times:
         print(f"Recorded {len(log_distances)} distance samples "
