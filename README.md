@@ -1,23 +1,30 @@
 # Lab 7: PID Control Systems
 
-This repository contains the simulation scripts and instructions for **Lab 7: Autonomy** (MIT 1.104). In this lab you will learn how Proportional-Integral-Derivative (PID) controllers work by tuning them on three progressively harder systems.
+This repository contains the simulation scripts, real-world measurement code, and instructions for **Lab 7: Autonomy** (MIT 1.104). In this lab you will learn how Proportional-Integral-Derivative (PID) controllers work by tuning them on simulated systems and then testing on a real robot car.
 
 ## Project Structure
 
 ```
 MIT-1104-Lab7-PID-2025/
-├── double_integrator.py   # Part 1 – Double integrator system
-├── rocket_model.py        # Part 2 – Rocket model (double integrator + gravity)
-├── pendulum.py            # Part 3 – Nonlinear pendulum (extra credit)
-├── instruction.tex        # Lab handout (LaTeX source)
-├── requirements.txt       # Python dependencies
-└── README.md              # This file
+├── simulation/
+│   ├── double_integrator.py   # Part 1  – Double integrator system
+│   ├── rocket_model.py        # Part 2  – Rocket model (double integrator + gravity)
+│   └── pendulum.py            # Part 3  – Nonlinear pendulum (optional)
+├── real_world/
+│   ├── run_experiment.py      # Part 1b – Student-facing real-world experiment script
+│   ├── live_measurement.py    # Webcam QR-code distance utilities (also standalone debug tool)
+│   └── robot_car/
+│       └── robot_car.ino      # ESP32 Arduino firmware (uploaded once by TA)
+├── 2026.tex                   # Lab handout (LaTeX source)
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
 ```
 
 ## Prerequisites
 
 - **Python 3.8 or newer** (check with `python --version`)
 - A terminal / command prompt (the built-in VS Code terminal works well)
+- For the real-world test: a USB webcam and network access to the robot car
 
 ## Setup
 
@@ -34,23 +41,82 @@ MIT-1104-Lab7-PID-2025/
    pip install -r requirements.txt
    ```
 
-## Running the Scripts
+## Running the Simulation Scripts
 
-Each script simulates a different system. Open the file in VS Code, set the PID gains (`Kp`, `Ki`, `Kd`) at the top, save, then run:
+Each simulation script models a different system. Open the file in VS Code, set the PID gains (`Kp`, `Ki`, `Kd`) at the top, save, then run:
 
 ```bash
-python double_integrator.py    # Part 1
-python rocket_model.py         # Part 2
-python pendulum.py             # Part 3 (extra credit)
+python simulation/double_integrator.py    # Part 1
+python simulation/rocket_model.py         # Part 2
+python simulation/pendulum.py             # Part 3 (optional)
 ```
 
 Two windows will appear for each script:
 - A **line plot** showing the system response over time (PID vs. LQR baseline), with performance metrics annotated directly on the plot.
 - An **animation** showing the system in motion.
 
+## Running the Real-World Test
+
+The real-world experiment sends PID parameters to the robot car from the laptop -- no re-flashing needed. The student-facing script is `real_world/run_experiment.py`.
+
+1. Open `real_world/run_experiment.py` and set the PID gains at the top (same variables as the simulation scripts):
+
+   ```python
+   Kp = 5.0
+   Ki = 0.0
+   Kd = 2.0
+   SETPOINT_MM  = 300.0    # Target distance from wall (mm)
+   CAMERA_INDEX = 0        # Webcam index (0 = built-in, 1+ = USB)
+   ```
+
+2. Connect your laptop's WiFi to the robot car's network (SSID and password are on the car).
+
+3. Run the script:
+
+   ```bash
+   python real_world/run_experiment.py
+   ```
+
+   The script sends PID gains and a START command to the car, then streams webcam distance measurements in real time.
+
+4. Press `q` to stop. The script sends a STOP command to the car and displays a post-run performance plot with annotated metrics.
+
+5. To try different gains, edit the file and re-run -- no need to touch the robot car.
+
+> **`live_measurement.py`** is a standalone debug tool for testing the webcam and QR code detection without starting the robot's PID loop. Run it with `python real_world/live_measurement.py`.
+
+### QR Code Labels
+
+Print two QR codes at the same physical size (matching `QR_SIZE_MM`):
+- One encoding the text **`CAR`** (attach to the robot car)
+- One encoding the text **`WALL`** (attach to the wall)
+
+## Flashing the Robot Car (TA only -- done once before the lab)
+
+The robot car runs an ESP32 with the Arduino sketch `real_world/robot_car/robot_car.ino`. The firmware is **uploaded once** by the TA; PID gains are **not** set in the sketch -- they are sent from the laptop at runtime via `run_experiment.py`.
+
+1. Install the [Arduino IDE](https://www.arduino.cc/en/software) and add the **ESP32 board package** (Board Manager URL: `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`).
+2. Open `real_world/robot_car/robot_car.ino` in the Arduino IDE.
+3. Set the WiFi credentials (`WIFI_SSID`, `WIFI_PASS`) at the top of the file. Each car should have a unique SSID (e.g. `RobotCar_01`).
+4. Select board **ESP32 Dev Module**, choose the correct COM port, and click **Upload**.
+5. Open the Serial Monitor at **115200 baud**. You should see `STATE   IDLE  (waiting for PID config + START)`.
+
+The car boots into **IDLE** mode (motors off, WiFi SoftAP active at `192.168.4.1`). It waits for a `PID:...` configuration message and a `START` command from the laptop before activating the control loop. **No re-flashing is needed between student runs.**
+
+### Pin Wiring Reference
+
+| Component | ESP32 Pin |
+|---|---|
+| L298N ENA (Motor A PWM) | GPIO 25 |
+| L298N IN1, IN2 | GPIO 26, 27 |
+| L298N ENB (Motor B PWM) | GPIO 14 |
+| L298N IN3, IN4 | GPIO 12, 13 |
+| HC-SR04 TRIG | GPIO 5 |
+| HC-SR04 ECHO | GPIO 18 |
+
 ## Modifying PID Gains
 
-At the top of every script you will find a clearly marked block:
+At the top of every simulation script you will find a clearly marked block:
 
 ```python
 # ==========================================
@@ -65,13 +131,13 @@ Change the values, save the file, and re-run the script to see the effect.
 
 ## Performance Metrics
 
-Each plot automatically computes and displays:
+Both simulation and real-world plots automatically compute and display:
 
 | Metric | Definition |
 |---|---|
 | **Rise Time** | Time for the response to go from 10 % to 90 % of the setpoint change |
 | **Overshoot** | Maximum amount the response exceeds the setpoint (as a %) |
-| **Settling Time** | Time after which the response stays within ±2 % of the setpoint |
+| **Settling Time** | Time after which the response stays within +/-2 % of the setpoint |
 | **Steady-State Error** | Difference between the final value and the setpoint |
 
 Use these values to fill in the tables in your lab report.
@@ -81,7 +147,9 @@ Use these values to fill in the tables in your lab report.
 - **`python` not found**: Try `python3` instead.
 - **Matplotlib window does not appear**: Make sure you are not running inside a headless SSH session. On macOS you may need to install the `pyobjc` framework (`pip install pyobjc`).
 - **Packages fail to install**: Make sure `pip` is up to date (`pip install --upgrade pip`).
+- **Wrong camera opens**: Change `CAMERA_INDEX` to `1` or `2` in `run_experiment.py` (or `live_measurement.py` if debugging).
+- **Camera calibration file not found**: The script will run without distortion correction and print a warning. For best accuracy, provide a `camera_calib.npz` file.
 
 ## References
 
-See the lab handout for the full theoretical background and detailed procedure.
+See the lab handout (`2026.tex`) for the full theoretical background and detailed procedure.
