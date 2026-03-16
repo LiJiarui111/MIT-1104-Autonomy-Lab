@@ -1,49 +1,87 @@
 # Lab 7: PID Control Systems
 
-This repository contains the necessary code and instructions for the PID Control Systems Lab (Lab 7). In this lab, you will learn about Proportional-Integral-Derivative (PID) control and how to tune the controller parameters for optimal system performance.
-
-## Requirements
-
-Before starting the lab, make sure you have the following installed:
-
-1. **MATLAB R2020a or newer**
-2. **Control System Toolbox** (required for the LQR ground truth implementation)
+This repository contains the simulation scripts and instructions for **Lab 7: Autonomy** (MIT 1.104). In this lab you will learn how Proportional-Integral-Derivative (PID) controllers work by tuning them on three progressively harder systems.
 
 ## Project Structure
 
 ```
-pid_control_lab/
-├── double_integrator.m        # Double integrator system simulation
-├── rocket_model.m             # Rocket model (double integrator with gravity) simulation
-├── pendulum.m                 # Pendulum system simulation (optional)
-└── README.md                  # This file
+MIT-1104-Lab7-PID-2025/
+├── double_integrator.py   # Part 1 – Double integrator system
+├── rocket_model.py        # Part 2 – Rocket model (double integrator + gravity)
+├── pendulum.py            # Part 3 – Nonlinear pendulum (extra credit)
+├── instruction.tex        # Lab handout (LaTeX source)
+├── requirements.txt       # Python dependencies
+└── README.md              # This file
 ```
 
-## Getting Started
+## Prerequisites
 
-1. Download this repository to your local machine
-2. Launch MATLAB and navigate to the lab directory
-3. Read the lab handout for detailed instructions
-4. Follow the lab procedure described in the handout
+- **Python 3.8 or newer** (check with `python --version`)
+- A terminal / command prompt (the built-in VS Code terminal works well)
 
-## Notes for Advanced Users
+## Setup
 
-### Modifying Simulation Parameters
+1. Clone the repository:
 
-Both scripts include various simulation parameters you can modify:
-- Simulation time and step size
-- Initial conditions
-- Reference setpoint
-- System parameters (for pendulum)
-- Disturbance settings
+   ```bash
+   git clone https://github.com/LiJiarui111/MIT-1104-Autonomy-Lab
+   cd MIT-1104-Autonomy-Lab
+   ```
 
-### Implementing the Pendulum Swing-Up Problem
+2. Install the required packages:
 
-The pendulum.py file includes a commented-out `swing_up_controller` function that implements a hybrid controller for swinging up the pendulum from the downward position. To use this:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-1. Change the initial conditions to start with the pendulum pointing downward:
+## Running the Scripts
+
+Each script simulates a different system. Open the file in VS Code, set the PID gains (`Kp`, `Ki`, `Kd`) at the top, save, then run:
+
+```bash
+python double_integrator.py    # Part 1
+python rocket_model.py         # Part 2
+python pendulum.py             # Part 3 (extra credit)
+```
+
+Two windows will appear for each script:
+- A **line plot** showing the system response over time (PID vs. LQR baseline), with performance metrics annotated directly on the plot.
+- An **animation** showing the system in motion.
+
+## Modifying PID Gains
+
+At the top of every script you will find a clearly marked block:
+
 ```python
-x0 = [np.pi, 0.0, 0.0]  # Initial angle of 180 degrees (downward)
+# ==========================================
+# PID PARAMETERS (Modify these for your 5 sets)
+Kp = 5.0
+Ki = 0.0
+Kd = 2.0
+# ==========================================
 ```
 
-2. Uncomment the alternative `system` function at the bottom of the file that uses the swing-up controller.
+Change the values, save the file, and re-run the script to see the effect.
+
+## Performance Metrics
+
+Each plot automatically computes and displays:
+
+| Metric | Definition |
+|---|---|
+| **Rise Time** | Time for the response to go from 10 % to 90 % of the setpoint change |
+| **Overshoot** | Maximum amount the response exceeds the setpoint (as a %) |
+| **Settling Time** | Time after which the response stays within ±2 % of the setpoint |
+| **Steady-State Error** | Difference between the final value and the setpoint |
+
+Use these values to fill in the tables in your lab report.
+
+## Troubleshooting
+
+- **`python` not found**: Try `python3` instead.
+- **Matplotlib window does not appear**: Make sure you are not running inside a headless SSH session. On macOS you may need to install the `pyobjc` framework (`pip install pyobjc`).
+- **Packages fail to install**: Make sure `pip` is up to date (`pip install --upgrade pip`).
+
+## References
+
+See the lab handout for the full theoretical background and detailed procedure.
