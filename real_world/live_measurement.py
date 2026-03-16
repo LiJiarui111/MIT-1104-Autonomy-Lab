@@ -5,6 +5,7 @@ import socket
 import time
 
 import matplotlib.pyplot as plt
+from pyzbar.pyzbar import decode as pyzbar_decode
 
 # ==========================================
 # CONFIGURATION (Fill these in before running)
@@ -27,32 +28,30 @@ def process_frame_for_distance(frame, mtx, dist_coeffs, qr_physical_size_mm=50.0
 
     Returns (annotated_frame, distance_mm).  distance_mm is None when the
     expected QR pair is not detected.
+
+    Uses pyzbar for robust QR decoding (OpenCV's built-in QRCodeDetector is
+    unreliable with small or simple QR codes in many OpenCV 4.x versions).
     """
     if mtx is not None and dist_coeffs is not None:
         frame = cv2.undistort(frame, mtx, dist_coeffs, None, mtx)
 
-    qr_decoder = cv2.QRCodeDetector()
-    ret, decoded_info, points, _ = qr_decoder.detectAndDecodeMulti(frame)
+    detected = pyzbar_decode(frame)
 
-    if not ret or points is None or len(decoded_info) < 2:
-        return frame, None
+    qr_map = {}
+    for obj in detected:
+        label = obj.data.decode("utf-8", errors="ignore").strip()
+        if label in (QR_LABEL_CAR, QR_LABEL_WALL):
+            qr_map[label] = obj
 
-    # Find the indices that match our expected labels
-    car_idx = wall_idx = None
-    for i, label in enumerate(decoded_info):
-        if label == QR_LABEL_CAR:
-            car_idx = i
-        elif label == QR_LABEL_WALL:
-            wall_idx = i
-
-    if car_idx is None or wall_idx is None:
+    if QR_LABEL_CAR not in qr_map or QR_LABEL_WALL not in qr_map:
         return frame, None
 
     centers = {}
     scale_factors = []
 
-    for tag, idx in [("CAR", car_idx), ("WALL", wall_idx)]:
-        pts = points[idx].astype(int)
+    for tag in (QR_LABEL_CAR, QR_LABEL_WALL):
+        obj = qr_map[tag]
+        pts = np.array([(p.x, p.y) for p in obj.polygon], dtype=np.int32)
         cx = int(np.mean(pts[:, 0]))
         cy = int(np.mean(pts[:, 1]))
         centers[tag] = (cx, cy)
@@ -63,11 +62,15 @@ def process_frame_for_distance(frame, mtx, dist_coeffs, qr_physical_size_mm=50.0
         cv2.putText(frame, tag, (cx + 8, cy - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        pixel_width = math.sqrt(
-            (pts[0][0] - pts[1][0]) ** 2 + (pts[0][1] - pts[1][1]) ** 2
-        )
-        if pixel_width > 0:
-            scale_factors.append(qr_physical_size_mm / pixel_width)
+        if len(pts) >= 2:
+            side_lengths = [
+                math.sqrt((pts[i][0] - pts[(i + 1) % len(pts)][0]) ** 2 +
+                          (pts[i][1] - pts[(i + 1) % len(pts)][1]) ** 2)
+                for i in range(len(pts))
+            ]
+            avg_side_px = sum(side_lengths) / len(side_lengths)
+            if avg_side_px > 0:
+                scale_factors.append(qr_physical_size_mm / avg_side_px)
 
     if len(scale_factors) < 2:
         return frame, None

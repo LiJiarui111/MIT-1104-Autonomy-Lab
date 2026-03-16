@@ -21,13 +21,13 @@
 // HARDWARE PIN CONFIGURATION  (TA sets once)
 // ==========================================
 // L298N Motor A (left)
-#define ENA 25
+#define ENA 27
 #define IN1 26
-#define IN2 27
+#define IN2 25
 // L298N Motor B (right)
 #define ENB 14
-#define IN3 12
-#define IN4 13
+#define IN3 17
+#define IN4 16
 // HC-SR04 Ultrasonic Sensor
 #define TRIG 5
 #define ECHO 18
