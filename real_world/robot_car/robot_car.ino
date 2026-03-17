@@ -30,6 +30,8 @@
 // HC-SR04 Ultrasonic Sensor
 #define TRIG 5
 #define ECHO 18
+// Status LED (on-board or external; change pin if needed)
+#define LED_PIN 3
 
 // ==========================================
 // BLUETOOTH CONFIGURATION  (TA sets once per car)
@@ -54,6 +56,10 @@ unsigned long WEBCAM_TIMEOUT_MS = 150;
 
 // Timeout: if no message for this long while RUNNING, auto-stop
 unsigned long STREAM_TIMEOUT_MS = 3000;
+
+// Fixed run duration: car automatically returns to IDLE after this many ms.
+// Set to 0 to disable (run until STOP or stream timeout).
+unsigned long RUN_DURATION_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // State machine
@@ -86,6 +92,7 @@ float e_integral = 0.0;
 
 unsigned long loop_interval_ms;
 unsigned long last_control_ms = 0;
+unsigned long run_start_ms    = 0;
 
 // ESP32 LEDC PWM (Core 3.x API: ledcAttach + ledcWrite by pin)
 #define PWM_FREQ   1000
@@ -163,7 +170,10 @@ void processMessage(const char* buf) {
         if (state == IDLE) {
             state = RUNNING;
             last_control_ms = millis();
+            run_start_ms    = millis();
             Serial.println("STATE   IDLE -> RUNNING");
+            if (RUN_DURATION_MS > 0)
+                Serial.print("  run duration: "), Serial.print(RUN_DURATION_MS), Serial.println(" ms");
             Serial.println("WEBCAM\tSONAR\tFUSED\tERR\tU\tPWM");
         }
         return;
@@ -174,6 +184,7 @@ void processMessage(const char* buf) {
         if (state == RUNNING) {
             state = IDLE;
             stopMotors();
+            digitalWrite(LED_PIN, LOW);
             Serial.println("STATE   RUNNING -> IDLE  (STOP received)");
         }
         return;
@@ -253,6 +264,15 @@ float fusedDistance(float sonar_mm) {
 }
 
 // =====================================================================
+// Status LED
+//   ON  – sonar returned a valid reading this tick
+//   OFF – sonar returned -1 (no echo, out of range, or echo not ready)
+// =====================================================================
+void updateLED(float sonar_mm) {
+    digitalWrite(LED_PIN, (sonar_mm > 0) ? HIGH : LOW);
+}
+
+// =====================================================================
 // Motor control
 // =====================================================================
 void setMotors(float u) {
@@ -289,6 +309,7 @@ void setup() {
     pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
     pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
     pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
+    pinMode(LED_PIN, OUTPUT); digitalWrite(LED_PIN, LOW);
 
     ledcAttach(ENA, PWM_FREQ, PWM_RES);
     ledcAttach(ENB, PWM_FREQ, PWM_RES);
@@ -318,7 +339,17 @@ void loop() {
     if (millis() - last_any_packet_ms > STREAM_TIMEOUT_MS) {
         state = IDLE;
         stopMotors();
+        digitalWrite(LED_PIN, LOW);
         Serial.println("STATE   RUNNING -> IDLE  (stream timeout)");
+        return;
+    }
+
+    // ---- RUNNING: auto-stop after fixed run duration ----
+    if (RUN_DURATION_MS > 0 && millis() - run_start_ms >= RUN_DURATION_MS) {
+        state = IDLE;
+        stopMotors();
+        digitalWrite(LED_PIN, LOW);
+        Serial.println("STATE   RUNNING -> IDLE  (run duration elapsed)");
         return;
     }
 
@@ -329,6 +360,7 @@ void loop() {
     last_control_ms = now;
 
     float sonar_mm = readUltrasonicResult();
+    updateLED(sonar_mm);
     float fused    = fusedDistance(sonar_mm);
     triggerUltrasonic();
 
