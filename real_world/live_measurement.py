@@ -23,6 +23,7 @@ class CameraGrabber:
         self._lock = threading.Lock()
         self._frame = None
         self._ret = False
+        self._last_frame_ts = 0.0
         self._running = True
         self._event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -34,13 +35,29 @@ class CameraGrabber:
             with self._lock:
                 self._ret = ret
                 self._frame = frame
+                if ret and frame is not None:
+                    self._last_frame_ts = time.time()
             self._event.set()
+            if not ret:
+                time.sleep(0.01)
 
-    def read(self):
-        self._event.wait()
+    def read(self, timeout_s=0.25, stale_after_s=0.5):
+        if not self._event.wait(timeout=timeout_s):
+            return False, None
         self._event.clear()
         with self._lock:
-            return self._ret, self._frame
+            ret = self._ret
+            frame = self._frame.copy() if (self._frame is not None) else None
+            frame_age = (time.time() - self._last_frame_ts) if self._last_frame_ts > 0 else float("inf")
+        if (not ret) or frame is None or frame_age > stale_after_s:
+            return False, None
+        return True, frame
+
+    def frame_age_s(self):
+        with self._lock:
+            if self._last_frame_ts <= 0:
+                return float("inf")
+            return time.time() - self._last_frame_ts
 
     def stop(self):
         self._running = False
@@ -303,14 +320,22 @@ if __name__ == "__main__":
     frame_count = 0
     fps = 0.0
     fps_timer = time.time()
+    last_cam_warn_ts = 0.0
 
     grabber = CameraGrabber(cap)
 
     while True:
         ret, frame = grabber.read()
         if not ret:
-            print("Failed to grab frame.")
-            break
+            now_warn = time.time()
+            if now_warn - last_cam_warn_ts >= 1.0:
+                age = grabber.frame_age_s()
+                age_str = f"{age:.2f}s" if np.isfinite(age) else "inf"
+                print(f"[Camera timeout/stale] last frame age={age_str}")
+                last_cam_warn_ts = now_warn
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+            continue
 
         processed_frame, distance = process_frame_for_distance(
             frame, mtx, dist_coeffs, QR_SIZE_MM

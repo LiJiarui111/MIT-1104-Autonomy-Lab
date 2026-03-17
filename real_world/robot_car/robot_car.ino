@@ -47,6 +47,7 @@ int   CONTROL_HZ      = 20;
 int   PWM_MIN         = 40;
 int   PWM_MAX         = 200;
 float INTEGRAL_LIMIT  = 5000.0;
+int   DEBUG_PRINT_HZ  = 5;
 
 // ==========================================
 // SENSOR FUSION PARAMETERS
@@ -75,7 +76,7 @@ CarState state = IDLE;
 float Kp = 0.0;
 float Ki = 0.0;
 float Kd = 0.0;
-float SETPOINT_MM = 300.0;
+float SETPOINT_MM = 100.0;
 bool  pid_configured = false;
 
 // ---------------------------------------------------------------------------
@@ -95,62 +96,31 @@ float e_integral = 0.0;
 unsigned long loop_interval_ms;
 unsigned long last_control_ms = 0;
 unsigned long run_start_ms    = 0;
+unsigned long last_debug_ms   = 0;
 
 // ESP32 LEDC PWM (Core 3.x API: ledcAttach + ledcWrite by pin)
 #define PWM_FREQ   1000
 #define PWM_RES    8
 
 // =====================================================================
-// HC-SR04 (interrupt-driven, non-blocking)
+// HC-SR04 (bounded pulseIn)
 //
-// sonar_listening gates the ISR: it is set TRUE by triggerUltrasonic()
-// and cleared by the ISR on the falling edge (measurement complete) or
-// by readUltrasonicResult() on timeout.  Between measurements the ISR
-// returns immediately, so motor-induced noise on the ECHO wire cannot
-// cause an interrupt storm that starves the main loop / BT stack.
+// With max range < 50 cm for this lab setup, pulseIn with a short timeout
+// keeps the read bounded and avoids interrupt/noise complexity.
 // =====================================================================
-#define SONAR_TIMEOUT_US 25000
+#define SONAR_TIMEOUT_US 4500
 
-volatile unsigned long echo_rise_us   = 0;
-volatile long          echo_duration  = -1;
-volatile bool          echo_ready     = false;
-volatile bool          sonar_listening = false;
-volatile unsigned long sonar_trigger_us = 0;
-
-void IRAM_ATTR echoISR() {
-    if (!sonar_listening) return;
-    if (digitalRead(ECHO) == HIGH) {
-        echo_rise_us = micros();
-    } else {
-        if (echo_rise_us > 0) {
-            echo_duration  = (long)(micros() - echo_rise_us);
-            echo_ready     = true;
-            echo_rise_us   = 0;
-            sonar_listening = false;
-        }
-    }
-}
-
-void triggerUltrasonic() {
-    echo_ready      = false;
-    echo_rise_us    = 0;
-    sonar_listening = true;
-    sonar_trigger_us = micros();
+float readUltrasonicResult() {
     digitalWrite(TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIG, LOW);
-}
 
-float readUltrasonicResult() {
-    if (sonar_listening && (micros() - sonar_trigger_us > SONAR_TIMEOUT_US))
-        sonar_listening = false;
-    if (!echo_ready) return -1.0;
-    echo_ready = false;
-    long dur = echo_duration;
-    if (dur <= 0) return -1.0;
-    float dist = dur * 0.343 / 2.0;
+    unsigned long dur = pulseIn(ECHO, HIGH, SONAR_TIMEOUT_US);
+    if (dur == 0) return -1.0;
+
+    float dist = dur * 0.343f / 2.0f;
     if (dist < DIST_MIN_MM || dist > DIST_MAX_MM) return -1.0;
     return dist;
 }
@@ -226,10 +196,13 @@ void processMessage(const char* buf) {
 // =====================================================================
 static char btBuf[128];
 static int  btBufIdx = 0;
+const int   BT_BYTES_PER_LOOP = 64;
 
 void receiveBT() {
-    while (SerialBT.available()) {
+    int processed = 0;
+    while (SerialBT.available() && processed < BT_BYTES_PER_LOOP) {
         char c = SerialBT.read();
+        processed++;
         if (c == '\n' || c == '\r') {
             if (btBufIdx > 0) {
                 btBuf[btBufIdx] = '\0';
@@ -341,13 +314,10 @@ void setup() {
     ledcAttach(ENB, PWM_FREQ, PWM_RES);
     stopMotors();
 
-    attachInterrupt(digitalPinToInterrupt(ECHO), echoISR, CHANGE);
-
     SerialBT.begin(BT_NAME);
     Serial.print("Bluetooth: "); Serial.println(BT_NAME);
 
     loop_interval_ms = 1000 / CONTROL_HZ;
-    triggerUltrasonic();
 
     Serial.println("STATE   IDLE  (waiting for BT connection + PID config + START)\n");
 }
@@ -388,7 +358,6 @@ void loop() {
     float sonar_mm = readUltrasonicResult();
     updateLEDs(sonar_mm);
     float fused    = fusedDistance(sonar_mm);
-    triggerUltrasonic();
 
     float e  = SETPOINT_MM - fused;
     float de = (dt > 0) ? (e - e_prev) / dt : 0.0;
@@ -404,10 +373,14 @@ void loop() {
     int pwm_out = (int)constrain(fabs(u), 0, PWM_MAX);
     if (pwm_out < PWM_MIN) pwm_out = 0;
 
-    Serial.print(webcam_dist_mm, 1); Serial.print("\t");
-    Serial.print(sonar_mm, 1);       Serial.print("\t");
-    Serial.print(fused, 1);          Serial.print("\t");
-    Serial.print(e, 1);              Serial.print("\t");
-    Serial.print(u, 1);              Serial.print("\t");
-    Serial.println(pwm_out);
+    unsigned long debug_interval_ms = 1000UL / (unsigned long)max(DEBUG_PRINT_HZ, 1);
+    if (millis() - last_debug_ms >= debug_interval_ms) {
+        last_debug_ms = millis();
+        Serial.print(webcam_dist_mm, 1); Serial.print("\t");
+        Serial.print(sonar_mm, 1);       Serial.print("\t");
+        Serial.print(fused, 1);          Serial.print("\t");
+        Serial.print(e, 1);              Serial.print("\t");
+        Serial.print(u, 1);              Serial.print("\t");
+        Serial.println(pwm_out);
+    }
 }
