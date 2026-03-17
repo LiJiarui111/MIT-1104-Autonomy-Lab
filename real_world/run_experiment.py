@@ -38,11 +38,11 @@ Kd = 2.0
 # EXPERIMENT CONFIGURATION
 # ==========================================
 SETPOINT_MM  = 300.0               # Target distance from wall (mm)
-SERIAL_PORT  = "COM5"              # Bluetooth serial port (see label on car)
+SERIAL_PORT  = "COM8"              # Bluetooth serial port (see label on car)
                                    # Windows: "COM5" (check Device Manager > Ports)
                                    # macOS:   "/dev/tty.RobotCar_XX"
 SERIAL_BAUD  = 115200              # Baud rate (must match ESP32)
-CAMERA_INDEX = 0                   # Webcam index (0 = built-in, 1+ = USB)
+CAMERA_INDEX = 1                   # Webcam index (0 = built-in, 1+ = USB)
 QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
 CALIB_FILE   = "camera_calib.npz"  # Camera calibration file (optional)
 CONTROL_HZ   = 20                 # Must match ESP32 CONTROL_HZ
