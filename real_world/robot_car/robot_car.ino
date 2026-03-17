@@ -261,11 +261,11 @@ void setMotors(float u) {
     if (pwm < PWM_MIN) pwm = 0;
 
     if (forward) {
-        digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-        digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);
-    } else {
         digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH);
         digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+    } else {
+        digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+        digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);
     }
 
     ledcWrite(ENA, pwm);
