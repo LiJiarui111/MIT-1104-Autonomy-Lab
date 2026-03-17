@@ -50,7 +50,7 @@ float INTEGRAL_LIMIT  = 5000.0;
 float DIST_MIN_MM         = 20.0;
 float DIST_MAX_MM         = 2000.0;
 float OUTLIER_THRESHOLD   = 100.0;
-unsigned long WEBCAM_TIMEOUT_MS = 500;
+unsigned long WEBCAM_TIMEOUT_MS = 150;
 
 // Timeout: if no message for this long while RUNNING, auto-stop
 unsigned long STREAM_TIMEOUT_MS = 3000;
@@ -87,26 +87,43 @@ float e_integral = 0.0;
 unsigned long loop_interval_ms;
 unsigned long last_control_ms = 0;
 
-// ESP32 LEDC PWM channels
-#define PWM_CHAN_A 0
-#define PWM_CHAN_B 1
+// ESP32 LEDC PWM (Core 3.x API: ledcAttach + ledcWrite by pin)
 #define PWM_FREQ   1000
 #define PWM_RES    8
 
 // =====================================================================
-// HC-SR04
+// HC-SR04 (interrupt-driven, non-blocking)
 // =====================================================================
-float readUltrasonic() {
+volatile unsigned long echo_rise_us  = 0;
+volatile long          echo_duration = -1;
+volatile bool          echo_ready    = false;
+
+void IRAM_ATTR echoISR() {
+    if (digitalRead(ECHO) == HIGH) {
+        echo_rise_us = micros();
+    } else {
+        if (echo_rise_us > 0) {
+            echo_duration = (long)(micros() - echo_rise_us);
+            echo_ready    = true;
+            echo_rise_us  = 0;
+        }
+    }
+}
+
+void triggerUltrasonic() {
     digitalWrite(TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIG, LOW);
+}
 
-    long duration = pulseIn(ECHO, HIGH, 25000);
-    if (duration == 0) return -1.0;
-
-    float dist = duration * 0.343 / 2.0;
+float readUltrasonicResult() {
+    if (!echo_ready) return -1.0;
+    echo_ready = false;
+    long dur = echo_duration;
+    if (dur <= 0) return -1.0;
+    float dist = dur * 0.343 / 2.0;
     if (dist < DIST_MIN_MM || dist > DIST_MAX_MM) return -1.0;
     return dist;
 }
@@ -251,13 +268,13 @@ void setMotors(float u) {
         digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);
     }
 
-    ledcWrite(PWM_CHAN_A, pwm);
-    ledcWrite(PWM_CHAN_B, pwm);
+    ledcWrite(ENA, pwm);
+    ledcWrite(ENB, pwm);
 }
 
 void stopMotors() {
-    ledcWrite(PWM_CHAN_A, 0);
-    ledcWrite(PWM_CHAN_B, 0);
+    ledcWrite(ENA, 0);
+    ledcWrite(ENB, 0);
     digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
     digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
 }
@@ -273,16 +290,17 @@ void setup() {
     pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
     pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
 
-    ledcSetup(PWM_CHAN_A, PWM_FREQ, PWM_RES);
-    ledcSetup(PWM_CHAN_B, PWM_FREQ, PWM_RES);
-    ledcAttachPin(ENA, PWM_CHAN_A);
-    ledcAttachPin(ENB, PWM_CHAN_B);
+    ledcAttach(ENA, PWM_FREQ, PWM_RES);
+    ledcAttach(ENB, PWM_FREQ, PWM_RES);
     stopMotors();
+
+    attachInterrupt(digitalPinToInterrupt(ECHO), echoISR, CHANGE);
 
     SerialBT.begin(BT_NAME);
     Serial.print("Bluetooth: "); Serial.println(BT_NAME);
 
     loop_interval_ms = 1000 / CONTROL_HZ;
+    triggerUltrasonic();
 
     Serial.println("STATE   IDLE  (waiting for BT connection + PID config + START)\n");
 }
@@ -310,8 +328,9 @@ void loop() {
     float dt = (now - last_control_ms) / 1000.0;
     last_control_ms = now;
 
-    float sonar_mm = readUltrasonic();
+    float sonar_mm = readUltrasonicResult();
     float fused    = fusedDistance(sonar_mm);
+    triggerUltrasonic();
 
     float e  = SETPOINT_MM - fused;
     float de = (dt > 0) ? (e - e_prev) / dt : 0.0;

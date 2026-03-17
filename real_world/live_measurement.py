@@ -2,9 +2,41 @@ import cv2
 import numpy as np
 import math
 import time
+import threading
 
 import matplotlib.pyplot as plt
 from pyzbar.pyzbar import decode as pyzbar_decode
+
+
+class CameraGrabber:
+    """Background thread that continuously grabs the newest camera frame.
+
+    cv2.VideoCapture buffers several frames internally.  When the processing
+    loop is slower than the camera FPS, cap.read() returns a stale buffered
+    frame instead of the latest one.  This class calls cap.grab() in a tight
+    loop so that cap.retrieve() always decodes the most recent image.
+    """
+
+    def __init__(self, cap):
+        self._cap = cap
+        self._event = threading.Event()
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        while self._running:
+            self._cap.grab()
+            self._event.set()
+
+    def retrieve(self):
+        self._event.wait()
+        self._event.clear()
+        return self._cap.retrieve()
+
+    def stop(self):
+        self._running = False
+        self._thread.join(timeout=1.0)
 
 # ==========================================
 # CONFIGURATION (Fill these in before running)
@@ -264,8 +296,10 @@ if __name__ == "__main__":
     fps = 0.0
     fps_timer = time.time()
 
+    grabber = CameraGrabber(cap)
+
     while True:
-        ret, frame = cap.read()
+        ret, frame = grabber.retrieve()
         if not ret:
             print("Failed to grab frame.")
             break
@@ -323,6 +357,7 @@ if __name__ == "__main__":
             break
 
     # --- Cleanup ---
+    grabber.stop()
     cap.release()
     cv2.destroyAllWindows()
 

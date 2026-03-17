@@ -21,6 +21,7 @@ import time
 import sys
 
 from live_measurement import (
+    CameraGrabber,
     process_frame_for_distance,
     show_post_run_plot,
 )
@@ -44,6 +45,7 @@ SERIAL_BAUD  = 115200              # Baud rate (must match ESP32)
 CAMERA_INDEX = 0                   # Webcam index (0 = built-in, 1+ = USB)
 QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
 CALIB_FILE   = "camera_calib.npz"  # Camera calibration file (optional)
+CONTROL_HZ   = 20                 # Must match ESP32 CONTROL_HZ
 # ==========================================
 
 
@@ -108,9 +110,14 @@ def main():
     fps = 0.0
     fps_timer = time.time()
 
+    send_interval = 1.0 / CONTROL_HZ
+    last_send_time = 0.0
+
+    grabber = CameraGrabber(cap)
+
     try:
         while True:
-            ret, frame = cap.read()
+            ret, frame = grabber.retrieve()
             if not ret:
                 print("Failed to grab frame.")
                 break
@@ -123,7 +130,11 @@ def main():
                 elapsed = time.time() - t_start
                 log_times.append(elapsed)
                 log_distances.append(distance)
-                send(f"DIST:{distance:.1f}")
+
+                now_send = time.time()
+                if now_send - last_send_time >= send_interval:
+                    send(f"DIST:{distance:.1f}")
+                    last_send_time = now_send
 
             # --- FPS counter ---
             frame_count += 1
@@ -176,6 +187,7 @@ def main():
     send("STOP")
     time.sleep(0.1)
 
+    grabber.stop()
     cap.release()
     cv2.destroyAllWindows()
     bt_serial.close()
