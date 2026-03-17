@@ -119,7 +119,7 @@ def main():
 
     try:
         while True:
-            ret, frame = grabber.retrieve()
+            ret, frame = grabber.read()
             if not ret:
                 print("Failed to grab frame.")
                 break

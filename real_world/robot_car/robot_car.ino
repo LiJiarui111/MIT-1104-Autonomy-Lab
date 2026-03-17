@@ -30,8 +30,10 @@
 // HC-SR04 Ultrasonic Sensor
 #define TRIG 5
 #define ECHO 18
-// Status LED (on-board or external; change pin if needed)
-#define LED_PIN 3
+// Status LED – sonar signal good (on-board or external; change pin if needed)
+#define LED_SONAR_PIN 2
+// Status LED – webcam/camera signal fresh
+#define LED_CAM_PIN   4
 
 // ==========================================
 // BLUETOOTH CONFIGURATION  (TA sets once per car)
@@ -184,7 +186,7 @@ void processMessage(const char* buf) {
         if (state == RUNNING) {
             state = IDLE;
             stopMotors();
-            digitalWrite(LED_PIN, LOW);
+            digitalWrite(LED_SONAR_PIN, LOW); digitalWrite(LED_CAM_PIN, LOW);
             Serial.println("STATE   RUNNING -> IDLE  (STOP received)");
         }
         return;
@@ -264,12 +266,17 @@ float fusedDistance(float sonar_mm) {
 }
 
 // =====================================================================
-// Status LED
-//   ON  – sonar returned a valid reading this tick
-//   OFF – sonar returned -1 (no echo, out of range, or echo not ready)
+// Status LEDs
+//   LED_SONAR_PIN  ON  – sonar returned a valid reading this tick
+//                  OFF – no echo, out of range, or echo ISR not yet fired
+//   LED_CAM_PIN    ON  – a fresh DIST packet arrived within WEBCAM_TIMEOUT_MS
+//                  OFF – webcam data stale or laptop not streaming
 // =====================================================================
-void updateLED(float sonar_mm) {
-    digitalWrite(LED_PIN, (sonar_mm > 0) ? HIGH : LOW);
+void updateLEDs(float sonar_mm) {
+    digitalWrite(LED_SONAR_PIN, (sonar_mm > 0) ? HIGH : LOW);
+    bool cam_ok = (webcam_dist_mm > 0)
+               && ((millis() - last_webcam_ms) < WEBCAM_TIMEOUT_MS);
+    digitalWrite(LED_CAM_PIN, cam_ok ? HIGH : LOW);
 }
 
 // =====================================================================
@@ -309,7 +316,8 @@ void setup() {
     pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
     pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
     pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
-    pinMode(LED_PIN, OUTPUT); digitalWrite(LED_PIN, LOW);
+    pinMode(LED_SONAR_PIN, OUTPUT); digitalWrite(LED_SONAR_PIN, LOW);
+    pinMode(LED_CAM_PIN,   OUTPUT); digitalWrite(LED_CAM_PIN,   LOW);
 
     ledcAttach(ENA, PWM_FREQ, PWM_RES);
     ledcAttach(ENB, PWM_FREQ, PWM_RES);
@@ -339,7 +347,7 @@ void loop() {
     if (millis() - last_any_packet_ms > STREAM_TIMEOUT_MS) {
         state = IDLE;
         stopMotors();
-        digitalWrite(LED_PIN, LOW);
+        digitalWrite(LED_SONAR_PIN, LOW); digitalWrite(LED_CAM_PIN, LOW);
         Serial.println("STATE   RUNNING -> IDLE  (stream timeout)");
         return;
     }
@@ -348,7 +356,7 @@ void loop() {
     if (RUN_DURATION_MS > 0 && millis() - run_start_ms >= RUN_DURATION_MS) {
         state = IDLE;
         stopMotors();
-        digitalWrite(LED_PIN, LOW);
+        digitalWrite(LED_SONAR_PIN, LOW); digitalWrite(LED_CAM_PIN, LOW);
         Serial.println("STATE   RUNNING -> IDLE  (run duration elapsed)");
         return;
     }
@@ -360,7 +368,7 @@ void loop() {
     last_control_ms = now;
 
     float sonar_mm = readUltrasonicResult();
-    updateLED(sonar_mm);
+    updateLEDs(sonar_mm);
     float fused    = fusedDistance(sonar_mm);
     triggerUltrasonic();
 

@@ -9,30 +9,38 @@ from pyzbar.pyzbar import decode as pyzbar_decode
 
 
 class CameraGrabber:
-    """Background thread that continuously grabs the newest camera frame.
+    """Background thread that continuously reads the newest camera frame.
 
-    cv2.VideoCapture buffers several frames internally.  When the processing
-    loop is slower than the camera FPS, cap.read() returns a stale buffered
-    frame instead of the latest one.  This class calls cap.grab() in a tight
-    loop so that cap.retrieve() always decodes the most recent image.
+    cv2.VideoCapture is not thread-safe: calling grab() on one thread while
+    retrieve() runs on another corrupts the internal buffer and can freeze
+    the camera driver.  This class confines ALL VideoCapture access to a
+    single background thread and hands decoded frames to the main thread
+    through a lock-protected shared variable.
     """
 
     def __init__(self, cap):
         self._cap = cap
-        self._event = threading.Event()
+        self._lock = threading.Lock()
+        self._frame = None
+        self._ret = False
         self._running = True
+        self._event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def _run(self):
         while self._running:
-            self._cap.grab()
+            ret, frame = self._cap.read()
+            with self._lock:
+                self._ret = ret
+                self._frame = frame
             self._event.set()
 
-    def retrieve(self):
+    def read(self):
         self._event.wait()
         self._event.clear()
-        return self._cap.retrieve()
+        with self._lock:
+            return self._ret, self._frame
 
     def stop(self):
         self._running = False
@@ -299,7 +307,7 @@ if __name__ == "__main__":
     grabber = CameraGrabber(cap)
 
     while True:
-        ret, frame = grabber.retrieve()
+        ret, frame = grabber.read()
         if not ret:
             print("Failed to grab frame.")
             break
