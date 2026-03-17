@@ -43,7 +43,7 @@ SERIAL_PORT  = "COM8"              # Bluetooth serial port (see label on car)
                                    # macOS:   "/dev/tty.RobotCar_XX"
 SERIAL_BAUD  = 115200              # Baud rate (must match ESP32)
 CAMERA_INDEX = 1                   # Webcam index (0 = built-in, 1+ = USB)
-QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
+QR_SIZE_MM   = 75.0                # Physical side length of each QR code (mm)
 CALIB_FILE   = "camera_calib.npz"  # Camera calibration file (optional)
 CONTROL_HZ   = 20                 # Must match ESP32 CONTROL_HZ
 
@@ -72,7 +72,8 @@ def main():
     # --- Open Bluetooth serial connection ---
     print(f"\nConnecting to robot car on {SERIAL_PORT} ...")
     try:
-        bt_serial = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+        bt_serial = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1,
+                                   write_timeout=0.05)
     except serial.SerialException as e:
         print(f"Error: Could not open serial port {SERIAL_PORT}: {e}")
         print("Make sure the robot car is powered on and paired via Bluetooth.")

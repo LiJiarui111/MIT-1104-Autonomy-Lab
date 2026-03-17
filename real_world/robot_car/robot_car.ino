@@ -102,24 +102,40 @@ unsigned long run_start_ms    = 0;
 
 // =====================================================================
 // HC-SR04 (interrupt-driven, non-blocking)
+//
+// sonar_listening gates the ISR: it is set TRUE by triggerUltrasonic()
+// and cleared by the ISR on the falling edge (measurement complete) or
+// by readUltrasonicResult() on timeout.  Between measurements the ISR
+// returns immediately, so motor-induced noise on the ECHO wire cannot
+// cause an interrupt storm that starves the main loop / BT stack.
 // =====================================================================
-volatile unsigned long echo_rise_us  = 0;
-volatile long          echo_duration = -1;
-volatile bool          echo_ready    = false;
+#define SONAR_TIMEOUT_US 25000
+
+volatile unsigned long echo_rise_us   = 0;
+volatile long          echo_duration  = -1;
+volatile bool          echo_ready     = false;
+volatile bool          sonar_listening = false;
+volatile unsigned long sonar_trigger_us = 0;
 
 void IRAM_ATTR echoISR() {
+    if (!sonar_listening) return;
     if (digitalRead(ECHO) == HIGH) {
         echo_rise_us = micros();
     } else {
         if (echo_rise_us > 0) {
-            echo_duration = (long)(micros() - echo_rise_us);
-            echo_ready    = true;
-            echo_rise_us  = 0;
+            echo_duration  = (long)(micros() - echo_rise_us);
+            echo_ready     = true;
+            echo_rise_us   = 0;
+            sonar_listening = false;
         }
     }
 }
 
 void triggerUltrasonic() {
+    echo_ready      = false;
+    echo_rise_us    = 0;
+    sonar_listening = true;
+    sonar_trigger_us = micros();
     digitalWrite(TRIG, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIG, HIGH);
@@ -128,6 +144,8 @@ void triggerUltrasonic() {
 }
 
 float readUltrasonicResult() {
+    if (sonar_listening && (micros() - sonar_trigger_us > SONAR_TIMEOUT_US))
+        sonar_listening = false;
     if (!echo_ready) return -1.0;
     echo_ready = false;
     long dur = echo_duration;
