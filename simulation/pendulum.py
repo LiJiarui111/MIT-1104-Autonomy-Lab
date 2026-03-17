@@ -17,7 +17,7 @@ theta_ref = 0.0  # 0 is perfectly upright
 theta_initial = np.pi / 4  # Starting slightly tipped over
 
 t_span = (0, 10)
-t_eval = np.linspace(0, 10, 1000)
+t_eval = np.linspace(0, 10, 200)
 
 # LQR Baseline (Linearized at theta=0)
 A = np.array([[0, 1], [g_const/L, -b/(m*L**2)]])

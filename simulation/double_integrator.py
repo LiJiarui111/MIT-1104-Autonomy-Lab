@@ -15,7 +15,7 @@ Kd = 2.0
 x_ref = 1.0  # Setpoint
 x0 = 0.0     # Initial position
 t_span = (0, 10)
-t_eval = np.linspace(0, 10, 1000)
+t_eval = np.linspace(0, 10, 200)
 
 # LQR Baseline Calculation
 A = np.array([[0, 1], [0, 0]])

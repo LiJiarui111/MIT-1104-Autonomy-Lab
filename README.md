@@ -65,10 +65,10 @@ The real-world experiment sends PID parameters to the robot car from the laptop 
    Kp = 5.0
    Ki = 0.0
    Kd = 2.0
-   SETPOINT_MM  = 300.0                    # Target distance from wall (mm)
-   SERIAL_PORT  = "/dev/tty.RobotCar_XX"   # Bluetooth serial port (see label on car)
-                                            # Windows: "COM5" (check Device Manager)
-   CAMERA_INDEX = 0                         # Webcam index (0 = built-in, 1+ = USB)
+   SETPOINT_MM  = 300.0        # Target distance from wall (mm)
+   SERIAL_PORT  = "COM5"       # Bluetooth serial port (see label on car)
+                                # macOS: "/dev/tty.RobotCar_XX"
+   CAMERA_INDEX = 0             # Webcam index (0 = built-in, 1+ = USB)
    ```
 
 2. Make sure your laptop is paired with the robot car's Bluetooth (the TA should have done this already; the Bluetooth name and serial port are on the car's label).
@@ -146,11 +146,13 @@ Use these values to fill in the tables in your lab report.
 
 ## Troubleshooting
 
-- **`python` not found**: Try `python3` instead.
-- **Matplotlib window does not appear**: Make sure you are not running inside a headless SSH session. On macOS you may need to install the `pyobjc` framework (`pip install pyobjc`).
+- **`python` not found**: On Windows, make sure Python is added to PATH (check "Add Python to PATH" during install). On macOS/Linux, try `python3` instead.
+- **`pyzbar` import error on Windows**: Install the [Microsoft Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) (usually pre-installed). No `brew install zbar` needed on Windows -- `pip install pyzbar` bundles everything.
+- **Bluetooth serial port not found**: On Windows, open **Device Manager > Ports (COM & LPT)** and look for "Standard Serial over Bluetooth link". Use the **outgoing** COM port number (e.g. `COM5`). On macOS, run `ls /dev/tty.Robot*`.
 - **Packages fail to install**: Make sure `pip` is up to date (`pip install --upgrade pip`).
 - **Wrong camera opens**: Change `CAMERA_INDEX` to `1` or `2` in `run_experiment.py` (or `live_measurement.py` if debugging).
 - **Camera calibration file not found**: The script will run without distortion correction and print a warning. For best accuracy, provide a `camera_calib.npz` file.
+- **Matplotlib window does not appear**: On macOS you may need `pip install pyobjc`.
 
 ## References
 

@@ -37,9 +37,9 @@ Kd = 2.0
 # EXPERIMENT CONFIGURATION
 # ==========================================
 SETPOINT_MM  = 300.0               # Target distance from wall (mm)
-SERIAL_PORT  = "/dev/tty.RobotCar_XX"  # Bluetooth serial port
-                                       # macOS:   /dev/tty.RobotCar_XX
-                                       # Windows: COM5  (check Device Manager)
+SERIAL_PORT  = "COM5"              # Bluetooth serial port (see label on car)
+                                   # Windows: "COM5" (check Device Manager > Ports)
+                                   # macOS:   "/dev/tty.RobotCar_XX"
 SERIAL_BAUD  = 115200              # Baud rate (must match ESP32)
 CAMERA_INDEX = 0                   # Webcam index (0 = built-in, 1+ = USB)
 QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
@@ -72,6 +72,8 @@ def main():
     except serial.SerialException as e:
         print(f"Error: Could not open serial port {SERIAL_PORT}: {e}")
         print("Make sure the robot car is powered on and paired via Bluetooth.")
+        print("  Windows: check Device Manager > Ports for the correct COM number.")
+        print("  macOS:   run  ls /dev/tty.Robot*  in a terminal.")
         cap.release()
         return
     time.sleep(0.5)
