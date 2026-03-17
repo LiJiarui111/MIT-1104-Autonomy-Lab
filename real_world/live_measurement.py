@@ -51,7 +51,7 @@ QR_LABEL_CAR  = "CAR"
 QR_LABEL_WALL = "WALL"
 
 
-def process_frame_for_distance(frame, mtx, dist_coeffs, qr_physical_size_mm=50.0):
+def process_frame_for_distance(frame, mtx, dist_coeffs, qr_physical_size_mm=50.0, offset=0.0):
     """Detect the CAR and WALL QR codes, compute the real-world distance
     between their centres, and return the annotated frame plus the distance.
 
@@ -109,7 +109,7 @@ def process_frame_for_distance(frame, mtx, dist_coeffs, qr_physical_size_mm=50.0
     dx = centers["CAR"][0] - centers["WALL"][0]
     dy = centers["CAR"][1] - centers["WALL"][1]
     pixel_distance = math.sqrt(dx ** 2 + dy ** 2)
-    real_world_distance_mm = pixel_distance * avg_scale
+    real_world_distance_mm = pixel_distance * avg_scale - offset
 
     cv2.line(frame, centers["CAR"], centers["WALL"], (255, 0, 0), 2)
     mid_x = (centers["CAR"][0] + centers["WALL"][0]) // 2

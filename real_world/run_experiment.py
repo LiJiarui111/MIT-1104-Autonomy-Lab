@@ -46,6 +46,8 @@ CAMERA_INDEX = 1                   # Webcam index (0 = built-in, 1+ = USB)
 QR_SIZE_MM   = 50.0                # Physical side length of each QR code (mm)
 CALIB_FILE   = "camera_calib.npz"  # Camera calibration file (optional)
 CONTROL_HZ   = 20                 # Must match ESP32 CONTROL_HZ
+
+OFFSET = 260 # mm
 # ==========================================
 
 
@@ -123,7 +125,7 @@ def main():
                 break
 
             processed_frame, distance = process_frame_for_distance(
-                frame, mtx, dist_coeffs, QR_SIZE_MM
+                frame, mtx, dist_coeffs, QR_SIZE_MM, OFFSET
             )
 
             if distance is not None:
