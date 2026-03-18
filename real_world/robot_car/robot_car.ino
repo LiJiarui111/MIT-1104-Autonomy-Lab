@@ -62,7 +62,7 @@ unsigned long STREAM_TIMEOUT_MS = 3000;
 
 // Fixed run duration: car automatically returns to IDLE after this many ms.
 // Set to 0 to disable (run until STOP or stream timeout).
-unsigned long RUN_DURATION_MS = 3000;
+unsigned long RUN_DURATION_MS = 15000;
 
 // ---------------------------------------------------------------------------
 // State machine
