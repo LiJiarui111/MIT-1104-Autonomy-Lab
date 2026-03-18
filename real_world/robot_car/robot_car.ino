@@ -52,7 +52,7 @@ int   DEBUG_PRINT_HZ  = 5;
 // Settle detection: stop motors once error stays small for long enough.
 // Prevents shivering/turning from motor mismatch causing bad sonar reads.
 float SETTLE_ERROR_MM       = 10.0;
-unsigned long SETTLE_TIME_MS = 1000;
+unsigned long SETTLE_TIME_MS = 2000;
 
 // ==========================================
 // SENSOR FUSION PARAMETERS
