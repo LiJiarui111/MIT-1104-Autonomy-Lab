@@ -47,6 +47,8 @@ int   CONTROL_HZ      = 20;
 int   PWM_MIN         = 40;
 int   PWM_MAX         = 200;
 float INTEGRAL_LIMIT  = 5000.0;
+float VEL_MAX         = 200.0;
+float ACCEL_MAX       = 500.0;
 int   DEBUG_PRINT_HZ  = 5;
 
 // ==========================================
@@ -62,7 +64,7 @@ unsigned long STREAM_TIMEOUT_MS = 3000;
 
 // Fixed run duration: car automatically returns to IDLE after this many ms.
 // Set to 0 to disable (run until STOP or stream timeout).
-unsigned long RUN_DURATION_MS = 15000;
+unsigned long RUN_DURATION_MS = 10000;
 
 // ---------------------------------------------------------------------------
 // State machine
@@ -92,6 +94,7 @@ float last_fused_mm = -1.0;
 
 float e_prev     = 0.0;
 float e_integral = 0.0;
+float current_velocity = 0.0;
 
 unsigned long loop_interval_ms;
 unsigned long last_control_ms = 0;
@@ -140,6 +143,7 @@ void processMessage(const char* buf) {
 
             e_prev     = 0.0;
             e_integral = 0.0;
+            current_velocity = 0.0;
             last_fused_mm = -1.0;
             webcam_dist_mm = -1.0;
 
@@ -159,12 +163,13 @@ void processMessage(const char* buf) {
         }
         if (state == IDLE) {
             state = RUNNING;
+            current_velocity = 0.0;
             last_control_ms = millis();
             run_start_ms    = millis();
             Serial.println("STATE   IDLE -> RUNNING");
             if (RUN_DURATION_MS > 0)
                 Serial.print("  run duration: "), Serial.print(RUN_DURATION_MS), Serial.println(" ms");
-            Serial.println("WEBCAM\tSONAR\tFUSED\tERR\tU\tPWM");
+            Serial.println("WEBCAM\tSONAR\tFUSED\tERR\tACCEL\tVEL\tPWM");
         }
         return;
     }
@@ -173,6 +178,7 @@ void processMessage(const char* buf) {
     if (strncmp(buf, "STOP", 4) == 0) {
         if (state == RUNNING) {
             state = IDLE;
+            current_velocity = 0.0;
             stopMotors();
             digitalWrite(LED_SONAR_PIN, LOW); digitalWrite(LED_CAM_PIN, LOW);
             Serial.println("STATE   RUNNING -> IDLE  (STOP received)");
@@ -334,6 +340,7 @@ void loop() {
     // ---- RUNNING: auto-stop if no messages for STREAM_TIMEOUT_MS ----
     if (millis() - last_any_packet_ms > STREAM_TIMEOUT_MS) {
         state = IDLE;
+        current_velocity = 0.0;
         stopMotors();
         digitalWrite(LED_SONAR_PIN, LOW); digitalWrite(LED_CAM_PIN, LOW);
         Serial.println("STATE   RUNNING -> IDLE  (stream timeout)");
@@ -343,6 +350,7 @@ void loop() {
     // ---- RUNNING: auto-stop after fixed run duration ----
     if (RUN_DURATION_MS > 0 && millis() - run_start_ms >= RUN_DURATION_MS) {
         state = IDLE;
+        current_velocity = 0.0;
         stopMotors();
         digitalWrite(LED_SONAR_PIN, LOW); digitalWrite(LED_CAM_PIN, LOW);
         Serial.println("STATE   RUNNING -> IDLE  (run duration elapsed)");
@@ -368,19 +376,24 @@ void loop() {
     float u = Kp * e + Ki * e_integral + Kd * de;
     e_prev  = e;
 
-    setMotors(u);
+    u = constrain(u, -ACCEL_MAX, ACCEL_MAX);
+    current_velocity += u * dt;
+    current_velocity = constrain(current_velocity, -VEL_MAX, VEL_MAX);
 
-    int pwm_out = (int)constrain(fabs(u), 0, PWM_MAX);
+    setMotors(current_velocity);
+
+    int pwm_out = (int)constrain(fabs(current_velocity), 0, PWM_MAX);
     if (pwm_out < PWM_MIN) pwm_out = 0;
 
     unsigned long debug_interval_ms = 1000UL / (unsigned long)max(DEBUG_PRINT_HZ, 1);
     if (millis() - last_debug_ms >= debug_interval_ms) {
         last_debug_ms = millis();
-        Serial.print(webcam_dist_mm, 1); Serial.print("\t");
-        Serial.print(sonar_mm, 1);       Serial.print("\t");
-        Serial.print(fused, 1);          Serial.print("\t");
-        Serial.print(e, 1);              Serial.print("\t");
-        Serial.print(u, 1);              Serial.print("\t");
+        Serial.print(webcam_dist_mm, 1);    Serial.print("\t");
+        Serial.print(sonar_mm, 1);          Serial.print("\t");
+        Serial.print(fused, 1);             Serial.print("\t");
+        Serial.print(e, 1);                 Serial.print("\t");
+        Serial.print(u, 1);                 Serial.print("\t");
+        Serial.print(current_velocity, 1);  Serial.print("\t");
         Serial.println(pwm_out);
     }
 }
