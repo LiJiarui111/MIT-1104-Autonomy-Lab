@@ -45,9 +45,14 @@ const char* BT_NAME = "RobotCar_XX";  // Change XX to car number
 // ==========================================
 int   CONTROL_HZ      = 20;
 int   PWM_MIN         = 40;
-int   PWM_MAX         = 200;
+int   PWM_MAX         = 150;
 float INTEGRAL_LIMIT  = 5000.0;
 int   DEBUG_PRINT_HZ  = 5;
+
+// Settle detection: stop motors once error stays small for long enough.
+// Prevents shivering/turning from motor mismatch causing bad sonar reads.
+float SETTLE_ERROR_MM       = 10.0;
+unsigned long SETTLE_TIME_MS = 1000;
 
 // ==========================================
 // SENSOR FUSION PARAMETERS
@@ -92,6 +97,9 @@ float last_fused_mm = -1.0;
 
 float e_prev     = 0.0;
 float e_integral = 0.0;
+
+unsigned long settle_start_ms = 0;
+bool          motors_settled  = false;
 
 unsigned long loop_interval_ms;
 unsigned long last_control_ms = 0;
@@ -161,6 +169,8 @@ void processMessage(const char* buf) {
             state = RUNNING;
             last_control_ms = millis();
             run_start_ms    = millis();
+            settle_start_ms = 0;
+            motors_settled  = false;
             Serial.println("STATE   IDLE -> RUNNING");
             if (RUN_DURATION_MS > 0)
                 Serial.print("  run duration: "), Serial.print(RUN_DURATION_MS), Serial.println(" ms");
@@ -373,10 +383,30 @@ void loop() {
     float u = Kp * e + Ki * e_integral + Kd * de;
     e_prev  = e;
 
-    setMotors(u);
+    // Settle detection: hold motors off once error is small for SETTLE_TIME_MS.
+    // This avoids motor-mismatch shivering that causes bad sonar readings.
+    if (fabs(e) < SETTLE_ERROR_MM) {
+        if (settle_start_ms == 0) settle_start_ms = now;
+        if (now - settle_start_ms >= SETTLE_TIME_MS) {
+            if (!motors_settled) {
+                stopMotors();
+                motors_settled = true;
+                Serial.println("SETTLE  motors off (error near zero)");
+            }
+        } else {
+            setMotors(u);
+        }
+    } else {
+        settle_start_ms = 0;
+        if (motors_settled) {
+            motors_settled = false;
+            Serial.println("SETTLE  motors resumed (error grew)");
+        }
+        setMotors(u);
+    }
 
-    int pwm_out = (int)constrain(fabs(u), 0, PWM_MAX);
-    if (pwm_out < PWM_MIN) pwm_out = 0;
+    int pwm_out = motors_settled ? 0 : (int)constrain(fabs(u), 0, PWM_MAX);
+    if (pwm_out > 0 && pwm_out < PWM_MIN) pwm_out = 0;
 
     unsigned long debug_interval_ms = 1000UL / (unsigned long)max(DEBUG_PRINT_HZ, 1);
     if (millis() - last_debug_ms >= debug_interval_ms) {
